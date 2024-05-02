@@ -11,11 +11,6 @@ TEST_DIR = Path(__file__).parent / ".." / "test_files"
 
 stellsym_list = [True, False]
 
-try:
-    import pyevtk
-    pyevtk_found = True
-except ImportError:
-    pyevtk_found = False
 
 #logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -110,6 +105,17 @@ class SurfaceGarabedianTests(unittest.TestCase):
                     self.assertTrue(s.is_fixed(f'Delta({m},{n})'))
                 else:
                     self.assertTrue(s.is_free(f'Delta({m},{n})'))
+
+    def test_shared_dof_init(self):
+        s = SurfaceGarabedian(nmin=-1, nmax=2, mmin=-2, mmax=5)
+        s.set('Delta(-2,-1)', 42)
+        s.set('Delta(5,-1)', -7)
+        s.set('Delta(-2,2)', 13)
+        s.set_Delta(5, 2, -50)
+
+        s2 = SurfaceGarabedian(nmin=-1, nmax=2, mmin=-2, mmax=5, dofs=s.dofs)
+        self.assertAlmostEqual(s.area(), s2.area())
+        self.assertAlmostEqual(s.volume(), s2.volume())
 
 
 if __name__ == "__main__":

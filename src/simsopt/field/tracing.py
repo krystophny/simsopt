@@ -2,7 +2,6 @@ import logging
 from math import sqrt
 
 import numpy as np
-# from nptyping import NDArray, Float
 
 import simsoptpp as sopp
 from .._core.util import parallel_loop_bounds
@@ -17,7 +16,9 @@ from .._core.types import RealArray
 logger = logging.getLogger(__name__)
 
 __all__ = ['SurfaceClassifier', 'LevelsetStoppingCriterion',
-           'MinToroidalFluxStoppingCriterion', 'MaxToroidalFluxStoppingCriterion',
+           'MinToroidalFluxStoppingCriterion','MaxToroidalFluxStoppingCriterion',
+           'MinRStoppingCriterion','MinZStoppingCriterion',
+           'MaxRStoppingCriterion','MaxZStoppingCriterion',
            'IterationStoppingCriterion', 'ToroidalTransitStoppingCriterion',
            'compute_fieldlines', 'compute_resonances',
            'compute_poloidal_transits', 'compute_toroidal_transits',
@@ -72,8 +73,8 @@ def gc_to_fullorbit_initial_guesses(field, xyz_inits, speed_pars, speed_total, m
 
 
 def trace_particles_boozer(field: BoozerMagneticField,
-                           stz_inits: RealArray,  # NDArray[Float],
-                           parallel_speeds: RealArray,  # NDArray[Float],
+                           stz_inits: RealArray,  
+                           parallel_speeds: RealArray,
                            tmax=1e-4,
                            mass=ALPHA_PARTICLE_MASS, charge=ALPHA_PARTICLE_CHARGE, Ekin=FUSION_ALPHA_PARTICLE_ENERGY,
                            tol=1e-9, comm=None, zetas=[], stopping_criteria=[], mode='gc_vac', forget_exact_path=False):
@@ -199,8 +200,8 @@ def trace_particles_boozer(field: BoozerMagneticField,
 
 
 def trace_particles(field: MagneticField,
-                    xyz_inits: RealArray,  # NDArray[Float],
-                    parallel_speeds: RealArray,  # NDArray[Float],
+                    xyz_inits: RealArray,
+                    parallel_speeds: RealArray,  
                     tmax=1e-4,
                     mass=ALPHA_PARTICLE_MASS, charge=ALPHA_PARTICLE_CHARGE, Ekin=FUSION_ALPHA_PARTICLE_ENERGY,
                     tol=1e-9, comm=None, phis=[], stopping_criteria=[], mode='gc_vac', forget_exact_path=False,
@@ -476,7 +477,6 @@ def compute_resonances(res_tys, res_phi_hits, ma=None, delta=1e-2):
             theta0 = res_tys[ip][0, 2]
             zeta0 = res_tys[ip][0, 3]
             theta0_mod = theta0 % (2*np.pi)
-            zeta0_mod = zeta0 % (2*np.pi)
             x0 = s0 * np.cos(theta0)
             y0 = s0 * np.sin(theta0)
         else:
@@ -551,10 +551,10 @@ def compute_resonances(res_tys, res_phi_hits, ma=None, delta=1e-2):
                             logger.debug(f'(R,Z)r = {np.sqrt(res_tys[ip][indexr,1]**2 + res_tys[ip][indexr,2]**2),res_tys[ip][indexr,3]}')
 
                         mpol = np.amax([mpoll, mpolm, mpolr])
-                        index_mpol = np.argmax([mpoll, mpolm, mpolr])
+                        # index_mpol = np.argmax([mpoll, mpolm, mpolr])
                         ntor = np.amax([ntorl, ntorm, ntorr])
-                        index_ntor = np.argmax([ntorl, ntorm, ntorr])
-                        index = np.amax([index_mpol, index_ntor])
+                        # index_ntor = np.argmax([ntorl, ntorm, ntorr])
+                        # index = np.amax([index_mpol, index_ntor])
                         resonances.append(np.asarray([R0, Z0, phi0, vpar0, t, mpol, ntor]))
     return resonances
 
@@ -740,7 +740,6 @@ class LevelsetStoppingCriterion(sopp.LevelsetStoppingCriterion):
         else:
             sopp.LevelsetStoppingCriterion.__init__(self, classifier)
 
-
 class MinToroidalFluxStoppingCriterion(sopp.MinToroidalFluxStoppingCriterion):
     """
     Stop the iteration once a particle falls below a critical value of
@@ -776,7 +775,6 @@ class MaxToroidalFluxStoppingCriterion(sopp.MaxToroidalFluxStoppingCriterion):
     """
     pass
 
-
 class ToroidalTransitStoppingCriterion(sopp.ToroidalTransitStoppingCriterion):
     """
     Stop the iteration once the maximum number of toroidal transits is reached.
@@ -799,8 +797,68 @@ class IterationStoppingCriterion(sopp.IterationStoppingCriterion):
     """
     pass
 
+class MinRStoppingCriterion(sopp.MinRStoppingCriterion):
+    """
+    Stop the iteration once a particle falls below a critical value of
+    ``R``, the radial cylindrical coordinate. 
 
-def plot_poincare_data(fieldlines_phi_hits, phis, filename, mark_lost=False, aspect='equal', dpi=300):
+    Usage:
+
+    .. code-block::
+
+        stopping_criteria=[MinRStopingCriterion(crit_r)]
+
+    where ``crit_r`` is the value of the critical coordinate.
+    """
+    pass
+
+class MinZStoppingCriterion(sopp.MinZStoppingCriterion):
+    """
+    Stop the iteration once a particle falls below a critical value of
+    ``Z``, the cylindrical vertical coordinate. 
+
+    Usage:
+
+    .. code-block::
+
+        stopping_criteria=[MinZStopingCriterion(crit_z)]
+
+    where ``crit_z`` is the value of the critical coordinate.
+    """
+    pass
+
+class MaxRStoppingCriterion(sopp.MaxRStoppingCriterion):
+    """
+    Stop the iteration once a particle goes above a critical value of
+    ``R``, the radial cylindrical coordinate. 
+
+    Usage:
+
+    .. code-block::
+
+        stopping_criteria=[MaxRStopingCriterion(crit_r)]
+
+    where ``crit_r`` is the value of the critical coordinate.
+    """
+    pass
+
+class MaxZStoppingCriterion(sopp.MaxZStoppingCriterion):
+    """
+    Stop the iteration once a particle gove above a critical value of
+    ``Z``, the cylindrical vertical coordinate. 
+
+    Usage:
+
+    .. code-block::
+
+        stopping_criteria=[MaxZStopingCriterion(crit_z)]
+
+    where ``crit_z`` is the value of the critical coordinate.
+    """
+    pass
+
+def plot_poincare_data(fieldlines_phi_hits, phis, filename, mark_lost=False, aspect='equal', dpi=300, xlims=None, 
+                       ylims=None, surf=None, s=2, marker='o'):
     """
     Create a poincare plot. Usage:
 
@@ -817,16 +875,28 @@ def plot_poincare_data(fieldlines_phi_hits, phis, filename, mark_lost=False, asp
     import matplotlib.pyplot as plt
     from math import ceil, sqrt
     nrowcol = ceil(sqrt(len(phis)))
-    fig, axs = plt.subplots(nrowcol, nrowcol, figsize=(16, 10))
+    plt.figure()
+    fig, axs = plt.subplots(nrowcol, nrowcol, figsize=(8, 5))
+    for ax in axs.ravel():
+        ax.set_aspect(aspect)
     color = None
     for i in range(len(phis)):
         row = i//nrowcol
         col = i % nrowcol
-        axs[row, col].set_title(f"$\\phi = {phis[i]/np.pi:.3f}\\pi$ ", loc='right', y=0.0)
-        axs[row, col].set_xlabel("$r$")
-        axs[row, col].set_ylabel("$z$")
-        axs[row, col].set_aspect(aspect)
-        axs[row, col].tick_params(direction="in")
+        if i != len(phis) - 1:
+            axs[row, col].set_title(f"$\\phi = {phis[i]/np.pi:.2f}\\pi$ ", loc='left', y=0.0)
+        else:
+            axs[row, col].set_title(f"$\\phi = {phis[i]/np.pi:.2f}\\pi$ ", loc='right', y=0.0)
+        if row == nrowcol - 1:
+            axs[row, col].set_xlabel("$r$")
+        if col == 0:
+            axs[row, col].set_ylabel("$z$")
+        if col == 1:
+            axs[row, col].set_yticklabels([])
+        if xlims is not None:
+            axs[row, col].set_xlim(xlims)
+        if ylims is not None:
+            axs[row, col].set_ylim(ylims)
         for j in range(len(fieldlines_phi_hits)):
             lost = fieldlines_phi_hits[j][-1, 1] < 0
             if mark_lost:
@@ -835,7 +905,18 @@ def plot_poincare_data(fieldlines_phi_hits, phis, filename, mark_lost=False, asp
             if data_this_phi.size == 0:
                 continue
             r = np.sqrt(data_this_phi[:, 2]**2+data_this_phi[:, 3]**2)
-            axs[row, col].scatter(r, data_this_phi[:, 4], marker='o', s=0.2, linewidths=0, c=color)
+            axs[row, col].scatter(r, data_this_phi[:, 4], marker=marker, s=s, linewidths=0, c=color)
+
+        plt.rc('axes', axisbelow=True)
+        axs[row, col].grid(True, linewidth=0.5)
+
+        # if passed a surface, plot the plasma surface outline
+        if surf is not None:
+            cross_section = surf.cross_section(phi=phis[i])
+            r_interp = np.sqrt(cross_section[:, 0] ** 2 + cross_section[:, 1] ** 2)
+            z_interp = cross_section[:, 2]
+            axs[row, col].plot(r_interp, z_interp, linewidth=1, c='k')
+
     plt.tight_layout()
     plt.savefig(filename, dpi=dpi)
     plt.close()

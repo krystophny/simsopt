@@ -1,12 +1,13 @@
-cmake_minimum_required(VERSION 3.5)
-project(simsoptpp)
+cmake_minimum_required(VERSION 3.15)
+project(simsoptpp LANGUAGES CXX)
 #set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake ${CMAKE_MODULE_PATH})
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 set(Python_FIND_STRATEGY LOCATION)
-find_package(Python 3 COMPONENTS Interpreter Development.Module NumPy)
+find_package(Python REQUIRED COMPONENTS Interpreter Development.Module NumPy)
+find_package(pybind11 CONFIG REQUIRED)
 
 message(status "Python executable is ${Python_EXECUTABLE}")
 message(status "Python Development Module found value is ${Python_Development.Module_FOUND}")
@@ -30,10 +31,22 @@ if(GIT_FOUND AND EXISTS "${PROJECT_SOURCE_DIR}/.git")
     endif()
 endif()
 
+# For XSIMD usage
+IF(DEFINED ENV{NO_XSIMD})
+   set(NO_XSIMD ON)
+ENDIF()
+set(_HAS_AUTO_PTR_ETC 1)
+configure_file(config.h.in config.h)
+include_directories(${CMAKE_CURRENT_BINARY_DIR})
+
 include(CheckCXXCompilerFlag)
 IF(DEFINED ENV{CI})
-    message(STATUS "CI environment detected. Set compilation flags accordingly (target ivybridge which supports avx).")
-    set(CMAKE_CXX_FLAGS "-O3 -march=ivybridge -mfma -ffp-contract=fast")
+    if (APPLE)
+    	set(CMAKE_CXX_FLAGS "-O3")
+    else()
+        message(STATUS "CI environment detected. Set compilation flags targetting Westmere microarch.")
+        set(CMAKE_CXX_FLAGS "-O3 -march=westmere")
+    endif()
 elseif(DEFINED ENV{CONDA_BUILD})
     message(STATUS "conda build environment detected. Let conda set compilation flags accordingly.")
     # set(CMAKE_CXX_FLAGS "-O3 -march=ivybridge -mfma -ffp-contract=fast")
@@ -46,11 +59,22 @@ else()
     	set(CMAKE_CXX_FLAGS "-O3 -march=native -mfma -ffp-contract=fast")
     elseif(${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL "arm64")  
     	set(CMAKE_CXX_FLAGS "-O3 -mcpu=apple-a14 -mfma -ffp-contract=fast")
+    else()
+    	set(CMAKE_CXX_FLAGS "-O3 -ffp-contract=fast")
     endif()
+endif()
+# Ensure all code used from Eigen does not have LGPL license:
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DEIGEN_MPL2_ONLY")
+message(STATUS "CMAKE_CXX_FLAGS are ${CMAKE_CXX_FLAGS}")
+
+if(DEFINED ENV{CONDA_PREFIX})
+  include_directories($ENV{CONDA_PREFIX}/include)
+  link_directories("$ENV{CONDA_PREFIX}/lib")
+  message(STATUS "Conda prefix is $ENV{CONDA_PREFIX}")
 endif()
 
 find_package(OpenMP)
-find_package(Boost 1.60.0)
+find_package(Boost 1.76.0)
 if(Boost_FOUND)
     message(STATUS "Boost version is ${Boost_VERSION_STRING}")
     message(STATUS "Boost include dirs are ${Boost_INCLUDE_DIRS}")
@@ -67,7 +91,7 @@ else()
         ${boost_target}
         PREFIX ${boost_DIR}
         GIT_REPOSITORY https://github.com/boostorg/boost.git
-        GIT_TAG boost-1.76.0
+        GIT_TAG boost-1.82.0
         GIT_SHALLOW TRUE
         GIT_PROGRESS TRUE
         GIT_SUBMODULES tools/build tools/boost_install libs/config libs/numeric
@@ -87,19 +111,23 @@ else()
     message(STATUS "Boost include dirs are ${Boost_INCLUDE_DIRS}")
 endif()
 
-add_subdirectory(thirdparty/pybind11)
-add_subdirectory(thirdparty/fmt)
+# add_subdirectory(thirdparty/pybind11)
+add_subdirectory(thirdparty/fmt EXCLUDE_FROM_ALL)
 set(XTENSOR_USE_OPENMP 0)
 set(XTENSOR_USE_TBB 0)
 
 
 pybind11_add_module(${PROJECT_NAME}
     src/simsoptpp/python.cpp src/simsoptpp/python_surfaces.cpp src/simsoptpp/python_curves.cpp
+    src/simsoptpp/boozerresidual_py.cpp
     src/simsoptpp/python_magneticfield.cpp src/simsoptpp/python_tracing.cpp src/simsoptpp/python_distance.cpp
-    src/simsoptpp/biot_savart_py.cpp src/simsoptpp/biot_savart_vjp_py.cpp
+    src/simsoptpp/biot_savart_py.cpp
+    src/simsoptpp/biot_savart_vjp_py.cpp
     src/simsoptpp/regular_grid_interpolant_3d_py.cpp
-    src/simsoptpp/curve.cpp src/simsoptpp/curverzfourier.cpp src/simsoptpp/curvexyzfourier.cpp
+    src/simsoptpp/curve.cpp src/simsoptpp/curverzfourier.cpp src/simsoptpp/curvexyzfourier.cpp src/simsoptpp/curveplanarfourier.cpp
     src/simsoptpp/surface.cpp src/simsoptpp/surfacerzfourier.cpp src/simsoptpp/surfacexyzfourier.cpp
+    src/simsoptpp/integral_BdotN.cpp
+    src/simsoptpp/dipole_field.cpp src/simsoptpp/permanent_magnet_optimization.cpp
     src/simsoptpp/dommaschk.cpp src/simsoptpp/reiman.cpp src/simsoptpp/tracing.cpp 
     src/simsoptpp/magneticfield_biotsavart.cpp src/simsoptpp/python_boozermagneticfield.cpp
     src/simsoptpp/boozerradialinterpolant.cpp
@@ -107,16 +135,16 @@ pybind11_add_module(${PROJECT_NAME}
 
 set_target_properties(${PROJECT_NAME}
     PROPERTIES
-    CXX_STANDARD 14
+    CXX_STANDARD 17
     CXX_STANDARD_REQUIRED ON)
 
 target_include_directories(${PROJECT_NAME} PRIVATE "thirdparty/xtensor/include" "thirdparty/xtensor-python/include" "thirdparty/xsimd/include" "thirdparty/xtl/include" "thirdparty/eigen" ${Python_NumPy_INCLUDE_DIRS} "src/simsoptpp/")
-target_link_libraries(${PROJECT_NAME} PRIVATE fmt::fmt)
+target_link_libraries(${PROJECT_NAME} PRIVATE fmt::fmt-header-only)
 
 if(NOT Boost_FOUND)
     add_dependencies(${PROJECT_NAME} ${boost_target})
 endif()
-target_include_directories(${PROJECT_NAME} PRIVATE ${Boost_INCLUDE_DIRS})
+set_target_properties(${PROJECT_NAME} PROPERTIES COMPILE_FLAGS "-I${Boost_INCLUDE_DIRS}")
 # target_link_libraries(${PROJECT_NAME} PRIVATE pybind11::module Boost::headers)
 
 if(OpenMP_CXX_FOUND)
@@ -126,10 +154,10 @@ endif()
 add_executable(profiling EXCLUDE_FROM_ALL src/profiling/profiling.cpp src/simsoptpp/biot_savart_c.cpp src/simsoptpp/biot_savart_vjp_c.cpp src/simsoptpp/regular_grid_interpolant_3d_c.cpp)
 set_target_properties(profiling
     PROPERTIES
-    CXX_STANDARD 14
+    CXX_STANDARD 17
     CXX_STANDARD_REQUIRED ON)
 target_include_directories(profiling PRIVATE  "thirdparty/xtensor/include" "thirdparty/xsimd/include" "thirdparty/xtl/include" "thirdparty/eigen" "src/simsoptpp/")
-target_link_libraries(profiling PRIVATE fmt::fmt)
+target_link_libraries(profiling PRIVATE fmt::fmt-header-only)
 
 
 
@@ -142,4 +170,4 @@ target_link_libraries(profiling PRIVATE fmt::fmt)
 #install(TARGETS ${PROJECT_NAME}
 #        #LIBRARY
 #        DESTINATION src/${PROJECT_NAME})
-#install(TARGETS ${PROJECT_NAME} LIBRARY DESTINATION ${PROJECT_NAME})
+install(TARGETS ${PROJECT_NAME} LIBRARY DESTINATION .)

@@ -1,6 +1,6 @@
 # coding: utf-8
 # Copyright (c) HiddenSymmetries Development Team.
-# Distributed under the terms of the LGPL License
+# Distributed under the terms of the MIT License
 
 """
 This module contains small utility functions and classes needed by *_core*
@@ -296,3 +296,4 @@ def parallel_loop_bounds(comm, n):
         assert idxs[0] == 0
         assert idxs[-1] == n
         return idxs[comm.rank], idxs[comm.rank+1]
+

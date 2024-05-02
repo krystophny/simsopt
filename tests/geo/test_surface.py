@@ -5,7 +5,6 @@ import os
 import logging
 import numpy as np
 
-from monty.json import MontyDecoder, MontyEncoder
 
 from simsopt.geo.surface import Surface
 from simsopt.geo.surfacerzfourier import SurfaceRZFourier
@@ -16,17 +15,12 @@ from simsopt.geo.surfacegarabedian import SurfaceGarabedian
 from simsopt.geo.surface import signed_distance_from_surface, SurfaceScaled, \
     best_nphi_over_ntheta
 from simsopt.geo.curverzfourier import CurveRZFourier
-from .surface_test_helpers import get_surface
+from simsopt._core.json import GSONDecoder, GSONEncoder, SIMSON
+from .surface_test_helpers import get_surface, get_boozer_surface
 
 TEST_DIR = (Path(__file__).parent / ".." / "test_files").resolve()
 
 stellsym_list = [True, False]
-
-try:
-    import pyevtk
-    pyevtk_found = True
-except ImportError:
-    pyevtk_found = False
 
 surface_types = ["SurfaceRZFourier", "SurfaceXYZFourier", "SurfaceXYZTensorFourier",
                  "SurfaceHenneberg", "SurfaceGarabedian"]
@@ -34,6 +28,15 @@ surface_types = ["SurfaceRZFourier", "SurfaceXYZFourier", "SurfaceXYZTensorFouri
 logger = logging.getLogger(__name__)
 #logging.basicConfig(level=logging.DEBUG)
 
+try:
+    import ground
+except:
+    ground = None
+
+try:
+    import bentley_ottmann
+except:
+    bentley_ottmann = None
 
 class QuadpointsTests(unittest.TestCase):
     def test_theta(self):
@@ -299,8 +302,8 @@ class SurfaceScaledTests(unittest.TestCase):
                     dof_size = len(s.x)
                     scale_factors = np.random.random_sample(dof_size)
                     scaled_s = SurfaceScaled(s, scale_factors)
-                    scaled_s_str = json.dumps(scaled_s, cls=MontyEncoder)
-                    regen_s = json.loads(scaled_s_str, cls=MontyDecoder)
+                    scaled_s_str = json.dumps(SIMSON(scaled_s), cls=GSONEncoder)
+                    json.loads(scaled_s_str, cls=GSONDecoder)
 
 
 class BestNphiOverNthetaTests(unittest.TestCase):
@@ -367,6 +370,73 @@ class CurvatureTests(unittest.TestCase):
                     K = s.surface_curvatures()[:, :, 1]
                     N = np.sqrt(np.sum(s.normal()**2, axis=2))
                     assert np.abs(np.sum(K*N)) < 1e-12
+
+
+class isSelfIntersecting(unittest.TestCase):
+    """
+    Tests the self-intersection algorithm:
+    """
+    @unittest.skipIf(ground is None or bentley_ottmann is None,
+                     "Libraries to check whether self-intersecting or not are missing")
+    def test_is_self_intersecting(self):
+        # dofs results in a surface that is self-intersecting
+        dofs = np.array([1., 0., 0., 0., 0., 0.1, 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.1, \
+                          0., 0., 0., 0., 0., 0., 0.1])
+        s = get_surface('SurfaceRZFourier', True, full=True, nphi=200, ntheta=200, mpol=2, ntor=2)
+        s.x = dofs 
+        assert s.is_self_intersecting()
+        
+        s = get_surface('SurfaceRZFourier', True, full=True, nphi=200, ntheta=200, mpol=2, ntor=2)
+        assert not s.is_self_intersecting()
+        
+        # make sure it works on an NCSX BoozerSurface
+        bs, boozer_surf = get_boozer_surface()
+        s = boozer_surf.surface
+        assert not s.is_self_intersecting(angle=0.123*np.pi)
+        assert not s.is_self_intersecting(angle=0.123*np.pi, thetas=200)
+        assert not s.is_self_intersecting(thetas=231)
+        
+        # make sure it works on a perturbed NCSX BoozerSurface
+        dofs = s.x.copy()
+        dofs[14]+=0.2
+        s.x = dofs
+        assert s.is_self_intersecting(angle=0.123*np.pi)
+        assert s.is_self_intersecting(angle=0.123*np.pi, thetas=200)
+        assert s.is_self_intersecting(thetas=202) 
+
+
+class UtilTests(unittest.TestCase):
+    def test_extend_via_normal(self):
+        """
+        If you apply extend_via_normal() or extend_via_projected_normal() to a
+        circular-cross-section axisymmetric torus, you should get back a similar
+        torus but with the expected larger minor radius.
+        """
+        mpol = 4
+        ntor = 5
+        nfp = 3
+        surf1 = SurfaceRZFourier.from_nphi_ntheta(mpol=mpol, ntor=ntor, nfp=nfp)
+        surf2 = SurfaceRZFourier.from_nphi_ntheta(mpol=mpol, ntor=ntor, nfp=nfp)
+        R0 = 1.7
+        aminor1 = 0.3
+        aminor2 = 0.5
+        surf1.set_rc(0, 0, R0)
+        surf2.set_rc(0, 0, R0)
+        surf1.set_rc(1, 0, aminor1)
+        surf2.set_rc(1, 0, aminor2)
+        surf1.set_zs(1, 0, aminor1)
+        surf2.set_zs(1, 0, aminor2)
+        x0 = surf1.x
+        assert max(np.abs(surf1.x - surf2.x)) > 0.1
+
+        surf1.extend_via_normal(aminor2 - aminor1)
+        np.testing.assert_allclose(surf1.x, surf2.x, atol=1e-14)
+
+        surf1.x = x0  # Restore the original shape
+        assert max(np.abs(surf1.x - surf2.x)) > 0.1
+
+        surf1.extend_via_projected_normal(aminor2 - aminor1)
+        np.testing.assert_allclose(surf1.x, surf2.x, atol=1e-14)
 
 
 if __name__ == "__main__":
